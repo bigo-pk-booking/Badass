@@ -35,6 +35,7 @@ private val DarkCard = Color(0xFF171719)
 private val Muted = Color(0xFFB8B8BE)
 private enum class AppPage(val label: String) { HOME("Home"), BOOK("Book"), MY_OPK("My OPK"), ADMIN("Admin") }
 private data class PkSlot(val id: String, val time: String, val status: String)
+private data class OpkBooking(val code: String, val date: String, val time: String, val name: String, val status: String, val opponentName: String, val opponentId: String, val hostLevel: String, val event: String)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); setContent { BadassNativeApp() } }
@@ -217,10 +218,80 @@ private fun BookingScreen() {
 @Composable
 private fun MyOpkScreen() {
     var id by remember { mutableStateOf("") }
-    SectionCard {
-        Text("MY OPK", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
-        OutlinedTextField(id, { id = it }, label = { Text("BIGO ID") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-        Text("Booking lookup is the next connection step.", color = Muted, fontSize = 12.sp)
+    var bookings by remember { mutableStateOf(emptyList<OpkBooking>()) }
+    var statusText by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var searched by remember { mutableStateOf(false) }
+
+    fun searchBookings() {
+        val lookupId = id.trim()
+        if (!lookupId.matches(Regex("[A-Za-z0-9._-]{3,40}"))) {
+            statusText = "Enter a valid BIGO ID (3–40 letters or numbers)."
+            bookings = emptyList()
+            searched = false
+            return
+        }
+        busy = true
+        searched = false
+        bookings = emptyList()
+        statusText = "Searching your bookings…"
+        Thread {
+            try {
+                val response = apiRequest("/api/lookup?bigoId=" + java.net.URLEncoder.encode(lookupId, "UTF-8"))
+                val array = response.optJSONArray("bookings")
+                val results = mutableListOf<OpkBooking>()
+                if (array != null) for (i in 0 until array.length()) {
+                    val b = array.getJSONObject(i)
+                    results.add(OpkBooking(
+                        code = b.optString("bookingCode", b.optString("booking_code", "")),
+                        date = b.optString("date", ""),
+                        time = b.optString("time", ""),
+                        name = b.optString("name", b.optString("bigo_name", "")),
+                        status = b.optString("status", "Pending approval"),
+                        opponentName = b.optString("opponentName", b.optString("opponent_name", "")),
+                        opponentId = b.optString("opponentBigoId", b.optString("opponent_bigo_id", "")),
+                        hostLevel = b.optString("hostLevel", b.optString("host_level", "")),
+                        event = b.optString("opkEvent", b.optString("opk_event", ""))
+                    ))
+                }
+                mainHandler.post {
+                    bookings = results
+                    searched = true
+                    statusText = if (results.isEmpty()) "No bookings found for this BIGO ID." else "Found " + results.size + " booking(s)."
+                    busy = false
+                }
+            } catch (e: Exception) {
+                mainHandler.post { statusText = e.message ?: "Lookup failed. Please try again."; busy = false }
+            }
+        }.start()
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionCard {
+            Text("MY OPK", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
+            Text("Find your bookings using the BIGO ID entered when booking.", color = Muted, fontSize = 13.sp)
+            OutlinedTextField(id, { id = it }, label = { Text("BIGO ID") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Button(onClick = { searchBookings() }, enabled = !busy, modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Red)) {
+                Icon(Icons.Default.Search, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(if (busy) "SEARCHING…" else "FIND MY BOOKINGS")
+            }
+            if (statusText.isNotBlank()) Text(statusText,
+                color = if (searched && bookings.isNotEmpty()) Color(0xFF8BE0A1) else Color(0xFFFFB6B6), fontSize = 12.sp)
+        }
+        bookings.forEach { booking ->
+            SectionCard {
+                Text(booking.date + " • " + booking.time, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text("Status: " + booking.status, color = if (booking.status.contains("approved", true)) Color(0xFF8BE0A1) else Color(0xFFFFC36B), fontWeight = FontWeight.Bold)
+                if (booking.name.isNotBlank()) Text("BIGO Name: " + booking.name, color = Muted, fontSize = 13.sp)
+                if (booking.code.isNotBlank()) Text("Booking Code: " + booking.code, color = Muted, fontSize = 12.sp)
+                if (booking.opponentName.isNotBlank()) Text("Opponent: " + booking.opponentName, color = Color.White, fontSize = 13.sp)
+                if (booking.opponentId.isNotBlank()) Text("Opponent BIGO ID: " + booking.opponentId, color = Muted, fontSize = 12.sp)
+                if (booking.hostLevel.isNotBlank()) Text("Host Level: " + booking.hostLevel, color = Muted, fontSize = 12.sp)
+                if (booking.event.isNotBlank()) Text("OPK Event: " + booking.event, color = Muted, fontSize = 12.sp)
+            }
+        }
     }
 }
 @Composable
