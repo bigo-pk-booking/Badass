@@ -294,10 +294,112 @@ private fun MyOpkScreen() {
         }
     }
 }
+private const val FIREBASE_WEB_API_KEY = "AIzaSyC4wcnp9FmyL8Api2kvcLcV68gCpnn09xE"
+private data class AdminBooking(val id: String, val date: String, val time: String, val name: String, val bigoId: String, val status: String, val code: String, val opponentId: String)
+
+private fun adminHttp(path: String, method: String = "GET", token: String? = null, body: String? = null, absolute: Boolean = false): JSONObject {
+    val connection = (if (absolute) URL(path) else URL(API_BASE + path)).openConnection() as HttpURLConnection
+    try {
+        connection.requestMethod = method
+        connection.connectTimeout = 15000
+        connection.readTimeout = 15000
+        connection.setRequestProperty("Accept", "application/json")
+        if (token != null) connection.setRequestProperty("Authorization", "Bearer $token")
+        if (body != null) { connection.doOutput = true; connection.setRequestProperty("Content-Type", "application/json; charset=utf-8"); connection.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) } }
+        val code = connection.responseCode
+        val raw = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() } ?: "{}"
+        val json = JSONObject(raw)
+        if (code !in 200..299) throw IllegalStateException(json.optString("error", json.optString("message", "Request failed (HTTP $code)")))
+        if (!absolute && !json.optBoolean("ok", false)) throw IllegalStateException(json.optString("error", "Request failed"))
+        return json
+    } finally { connection.disconnect() }
+}
+
 @Composable
 private fun AdminScreen() {
-    SectionCard {
-        Text("ADMIN CENTER", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
-        Text("Admin sign-in and management will be connected securely after public booking and lookup.", color = Muted, fontSize = 13.sp)
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var token by remember { mutableStateOf("") }
+    var role by remember { mutableStateOf("") }
+    var rows by remember { mutableStateOf(emptyList<AdminBooking>()) }
+    var message by remember { mutableStateOf("Sign in using your approved BADASS Admin account.") }
+    var busy by remember { mutableStateOf(false) }
+
+    fun loadBookings(idToken: String) {
+        busy = true; message = "Loading bookings from Cloudflare D1…"
+        Thread {
+            try {
+                val response = adminHttp("/api/admin/bookings", token = idToken)
+                val array = response.optJSONArray("bookings")
+                val result = mutableListOf<AdminBooking>()
+                if (array != null) for (i in 0 until array.length()) {
+                    val b = array.getJSONObject(i)
+                    result.add(AdminBooking(b.optString("id"), b.optString("date"), b.optString("time"), b.optString("bigo_name", b.optString("name")), b.optString("bigo_id", b.optString("bigoId")), b.optString("status", "Pending approval"), b.optString("booking_code", b.optString("bookingCode")), b.optString("opponent_bigo_id", b.optString("opponentBigoId"))))
+                }
+                mainHandler.post { rows = result; message = "Loaded " + result.size + " booking(s) from the existing database."; busy = false }
+            } catch (e: Exception) { mainHandler.post { message = e.message ?: "Could not load bookings."; busy = false } }
+        }.start()
+    }
+
+    fun signIn() {
+        if (email.isBlank() || password.isBlank()) { message = "Enter your Admin email and password."; return }
+        busy = true; message = "Signing in securely…"
+        Thread {
+            try {
+                val body = JSONObject().put("email", email.trim()).put("password", password).put("returnSecureToken", true).toString()
+                val auth = adminHttp("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" + FIREBASE_WEB_API_KEY, "POST", body = body, absolute = true)
+                val idToken = auth.optString("idToken")
+                if (idToken.isBlank()) throw IllegalStateException("Firebase did not return a sign-in token.")
+                val verifiedRole = try { adminHttp("/api/superadmin/admins", token = idToken); "superadmin" } catch (_: Exception) { try { adminHttp("/api/admin/bookings", token = idToken); "admin" } catch (_: Exception) { "" } }
+                if (verifiedRole.isBlank()) throw IllegalStateException("This Firebase account is not enabled in BADASS Admin Management.")
+                mainHandler.post { token = idToken; role = verifiedRole; password = ""; message = "Secure " + verifiedRole.uppercase() + " login successful."; if (verifiedRole == "admin") loadBookings(idToken) else { message = "Superadmin authenticated. Account management will be added next."; busy = false } }
+            } catch (e: Exception) { mainHandler.post { message = e.message ?: "Admin login failed."; busy = false } }
+        }.start()
+    }
+
+    fun changeStatus(booking: AdminBooking, newStatus: String) {
+        if (booking.id.isBlank()) { message = "This booking has no valid record ID."; return }
+        busy = true; message = "Updating booking status…"
+        Thread {
+            try {
+                val encodedId = java.net.URLEncoder.encode(booking.id, "UTF-8")
+                adminHttp("/api/admin/bookings/" + encodedId + "/status", "PATCH", token, JSONObject().put("status", newStatus).toString())
+                mainHandler.post { message = "Booking " + newStatus.lowercase() + " successfully."; loadBookings(token) }
+            } catch (e: Exception) { mainHandler.post { message = e.message ?: "Could not update booking."; busy = false } }
+        }.start()
+    }
+
+    if (token.isBlank()) {
+        SectionCard {
+            Text("ADMIN CENTER", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
+            Text("Use the same approved Firebase Admin account as badassopkx.com.", color = Muted, fontSize = 13.sp)
+            OutlinedTextField(email, { email = it }, label = { Text("Admin email") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(password, { password = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+            Button(onClick = { signIn() }, enabled = !busy, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text(if (busy) "PLEASE WAIT…" else "SIGN IN AS ADMIN") }
+            Text(message, color = Color(0xFFFFB6B6), fontSize = 12.sp)
+        }
+    } else {
+        SectionCard {
+            Text("ADMIN DASHBOARD", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
+            Text("Authenticated as " + role.uppercase(), color = Color(0xFF8BE0A1), fontWeight = FontWeight.Bold)
+            if (role == "admin") Text(rows.size.toString() + " booking(s) loaded from Cloudflare D1.", color = Muted)
+            Button(onClick = { if (role == "admin") loadBookings(token) }, enabled = !busy && role == "admin", modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)) { Text("REFRESH BOOKINGS") }
+            OutlinedButton(onClick = { token = ""; role = ""; rows = emptyList(); message = "Signed out." }, modifier = Modifier.fillMaxWidth()) { Text("SIGN OUT") }
+            Text(message, color = Muted, fontSize = 12.sp)
+        }
+        if (role == "admin") rows.forEach { booking ->
+            SectionCard {
+                Text(booking.date + " • " + booking.time, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text(booking.name.ifBlank { "BIGO Player" }, color = Color.White, fontWeight = FontWeight.Bold)
+                Text("BIGO ID: " + booking.bigoId, color = Muted, fontSize = 12.sp)
+                if (booking.code.isNotBlank()) Text("Code: " + booking.code, color = Muted, fontSize = 11.sp)
+                Text("Status: " + booking.status, color = Color(0xFFFFC36B), fontWeight = FontWeight.Bold)
+                if (booking.opponentId.isNotBlank()) Text("Opponent ID: " + booking.opponentId, color = Muted, fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { changeStatus(booking, "Approved") }, enabled = !busy && booking.status.lowercase() !in listOf("approved", "opponent assigned", "cancelled", "rejected"), modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF237A42))) { Text("APPROVE") }
+                    Button(onClick = { changeStatus(booking, "Cancelled") }, enabled = !busy && booking.status.lowercase() !in listOf("cancelled", "rejected"), modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("CANCEL") }
+                }
+            }
+        }
     }
 }
