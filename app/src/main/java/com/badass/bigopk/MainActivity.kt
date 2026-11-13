@@ -324,6 +324,8 @@ private fun AdminScreen() {
     var rows by remember { mutableStateOf(emptyList<AdminBooking>()) }
     var message by remember { mutableStateOf("Sign in using your approved BADASS Admin account.") }
     var busy by remember { mutableStateOf(false) }
+    var searchText by remember { mutableStateOf("") }
+    var statusFilter by remember { mutableStateOf("All") }
 
     fun loadBookings(idToken: String) {
         busy = true; message = "Loading bookings from Cloudflare D1…"
@@ -384,11 +386,25 @@ private fun AdminScreen() {
             Text("ADMIN DASHBOARD", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
             Text("Authenticated as " + role.uppercase(), color = Color(0xFF8BE0A1), fontWeight = FontWeight.Bold)
             if (role == "admin") Text(rows.size.toString() + " booking(s) loaded from Cloudflare D1.", color = Muted)
+            if (role == "admin") OutlinedTextField(searchText, { searchText = it }, label = { Text("Search BIGO ID, name or booking code") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            if (role == "admin") Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("All", "Pending", "Approved", "Cancelled").forEach { filter ->
+                    OutlinedButton(onClick = { statusFilter = filter }, modifier = Modifier.weight(1f)) { Text(if (statusFilter == filter) "• " + filter else filter, fontSize = 10.sp) }
+                }
+            }
             Button(onClick = { if (role == "admin") loadBookings(token) }, enabled = !busy && role == "admin", modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)) { Text("REFRESH BOOKINGS") }
             OutlinedButton(onClick = { token = ""; role = ""; rows = emptyList(); message = "Signed out." }, modifier = Modifier.fillMaxWidth()) { Text("SIGN OUT") }
             Text(message, color = Muted, fontSize = 12.sp)
         }
-        if (role == "admin") rows.forEach { booking ->
+        val visibleRows = rows.filter { booking ->
+            val q = searchText.trim().lowercase()
+            val matchesSearch = q.isBlank() || booking.bigoId.lowercase().contains(q) || booking.name.lowercase().contains(q) || booking.code.lowercase().contains(q)
+            val status = booking.status.lowercase()
+            val matchesStatus = when (statusFilter) { "Pending" -> status.contains("pending"); "Approved" -> status == "approved" || status == "opponent assigned"; "Cancelled" -> status == "cancelled" || status == "rejected"; else -> true }
+            matchesSearch && matchesStatus
+        }
+        if (role == "admin" && visibleRows.isEmpty()) Text("No bookings match this search or filter.", color = Muted, modifier = Modifier.padding(16.dp))
+        if (role == "admin") visibleRows.forEach { booking ->
             SectionCard {
                 Text(booking.date + " • " + booking.time, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 Text(booking.name.ifBlank { "BIGO Player" }, color = Color.White, fontWeight = FontWeight.Bold)
