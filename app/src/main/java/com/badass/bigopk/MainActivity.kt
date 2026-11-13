@@ -295,7 +295,7 @@ private fun MyOpkScreen() {
     }
 }
 private const val FIREBASE_WEB_API_KEY = "AIzaSyC4wcnp9FmyL8Api2kvcLcV68gCpnn09xE"
-private data class AdminBooking(val id: String, val date: String, val time: String, val name: String, val bigoId: String, val status: String, val code: String, val opponentId: String)
+private data class AdminBooking(val id: String, val date: String, val time: String, val name: String, val bigoId: String, val status: String, val code: String, val opponentId: String, val adminReviewed: Boolean)
 
 private fun adminHttp(path: String, method: String = "GET", token: String? = null, body: String? = null, absolute: Boolean = false): JSONObject {
     val connection = (if (absolute) URL(path) else URL(API_BASE + path)).openConnection() as HttpURLConnection
@@ -334,7 +334,7 @@ private fun AdminScreen() {
                 val result = mutableListOf<AdminBooking>()
                 if (array != null) for (i in 0 until array.length()) {
                     val b = array.getJSONObject(i)
-                    result.add(AdminBooking(b.optString("id"), b.optString("date"), b.optString("time"), b.optString("bigo_name", b.optString("name")), b.optString("bigo_id", b.optString("bigoId")), b.optString("status", "Pending approval"), b.optString("booking_code", b.optString("bookingCode")), b.optString("opponent_bigo_id", b.optString("opponentBigoId"))))
+                    result.add(AdminBooking(b.optString("id"), b.optString("date"), b.optString("time"), b.optString("bigo_name", b.optString("name")), b.optString("bigo_id", b.optString("bigoId")), b.optString("status", "Pending approval"), b.optString("booking_code", b.optString("bookingCode")), b.optString("opponent_bigo_id", b.optString("opponentBigoId")), b.optInt("admin_reviewed", if (b.optBoolean("adminReviewed")) 1 else 0) == 1))
                 }
                 mainHandler.post { rows = result; message = "Loaded " + result.size + " booking(s) from the existing database."; busy = false }
             } catch (e: Exception) { mainHandler.post { message = e.message ?: "Could not load bookings."; busy = false } }
@@ -358,6 +358,7 @@ private fun AdminScreen() {
     }
 
     fun changeStatus(booking: AdminBooking, newStatus: String) {
+        if (newStatus == "Approved" && !booking.adminReviewed) { message = "This booking must be reviewed before approval."; return }
         if (booking.id.isBlank()) { message = "This booking has no valid record ID."; return }
         busy = true; message = "Updating booking status…"
         Thread {
@@ -396,7 +397,7 @@ private fun AdminScreen() {
                 Text("Status: " + booking.status, color = Color(0xFFFFC36B), fontWeight = FontWeight.Bold)
                 if (booking.opponentId.isNotBlank()) Text("Opponent ID: " + booking.opponentId, color = Muted, fontSize = 12.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { changeStatus(booking, "Approved") }, enabled = !busy && booking.status.lowercase() !in listOf("approved", "opponent assigned", "cancelled", "rejected"), modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF237A42))) { Text("APPROVE") }
+                    Button(onClick = { changeStatus(booking, "Approved") }, enabled = !busy && booking.adminReviewed && booking.status.lowercase() !in listOf("approved", "opponent assigned", "cancelled", "rejected"), modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF237A42))) { Text("APPROVE") }
                     Button(onClick = { changeStatus(booking, "Cancelled") }, enabled = !busy && booking.status.lowercase() !in listOf("cancelled", "rejected"), modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("CANCEL") }
                 }
             }
