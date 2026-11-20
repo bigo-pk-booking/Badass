@@ -26,7 +26,6 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.util.Calendar
-import kotlinx.coroutines.launch
 
 private const val API_BASE = "https://bigo-pk-api.wandering-forest-74e9.workers.dev"
 private val mainHandler = Handler(Looper.getMainLooper())
@@ -61,93 +60,26 @@ private fun apiRequest(path: String, method: String = "GET", body: String? = nul
 }
 
 @Composable
-// Host sidebar trial navigation
 private fun BadassNativeApp() {
     var page by remember { mutableStateOf(AppPage.HOME) }
-    var drawerOpen by remember { mutableStateOf(false) }
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
-
     MaterialTheme(colorScheme = darkColorScheme(primary = Red, background = Black, surface = DarkCard, onBackground = Color.White, onSurface = Color.White)) {
-        ModalNavigationDrawer(
-            drawerState = drawerState,
-            gesturesEnabled = true,
-            drawerContent = {
-                ModalDrawerSheet(
-                    drawerContainerColor = Color(0xFF101012),
-                    drawerContentColor = Color.White,
-                    drawerShape = RoundedCornerShape(topEnd = 18.dp, bottomEnd = 18.dp)
-                ) {
-                    Column(
-                        Modifier.fillMaxHeight().width(292.dp).background(Color(0xFF101012))
-                            .padding(horizontal = 16.dp, vertical = 22.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text("BADASS", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Black, letterSpacing = 4.sp)
-                        Text("HOST PANEL", color = Color(0xFFFF7777), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                        Spacer(Modifier.height(18.dp))
-                        Text("MAIN MENU", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 12.dp, bottom = 4.dp))
-                        AppPage.values().forEach { p ->
-                            val icon = when (p) {
-                                AppPage.HOME -> Icons.Default.Home
-                                AppPage.BOOK -> Icons.Default.EventAvailable
-                                AppPage.MY_OPK -> Icons.Default.ConfirmationNumber
-                                AppPage.ADMIN -> Icons.Default.AdminPanelSettings
-                            }
-                            NavigationDrawerItem(
-                                label = { Text(if (p == AppPage.BOOK) "Set OPK" else p.label, fontWeight = if (page == p) FontWeight.Bold else FontWeight.Medium) },
-                                selected = page == p,
-                                onClick = {
-                                    page = p
-                                    scope.launch { drawerState.close() }
-                                },
-                                icon = { Icon(icon, contentDescription = null) },
-                                colors = NavigationDrawerItemDefaults.colors(
-                                    selectedContainerColor = Red,
-                                    selectedTextColor = Color.White,
-                                    selectedIconColor = Color.White,
-                                    unselectedContainerColor = Color.Transparent,
-                                    unselectedTextColor = Muted,
-                                    unselectedIconColor = Muted
-                                )
-                            )
-                        }
-                        Spacer(Modifier.weight(1f))
-                        Divider(color = Color(0xFF303034))
-                        Text("BIGO PK SLOTS", color = Color(0xFFFFA5A5), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(12.dp))
-                    }
+        Scaffold(containerColor = Black, topBar = {
+            Column(Modifier.fillMaxWidth().background(Black).padding(horizontal = 20.dp, vertical = 15.dp)) {
+                Text("BADASS", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Black, letterSpacing = 4.sp)
+                Text("BIGO PK SLOTS", color = Color(0xFFFFA5A5), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+            }
+        }, bottomBar = {
+            NavigationBar(containerColor = Color(0xFF111113), contentColor = Color.White) {
+                AppPage.values().forEach { p ->
+                    val icon = when (p) { AppPage.HOME -> Icons.Default.Home; AppPage.BOOK -> Icons.Default.EventAvailable; AppPage.MY_OPK -> Icons.Default.ConfirmationNumber; AppPage.ADMIN -> Icons.Default.AdminPanelSettings }
+                    NavigationBarItem(selected = page == p, onClick = { page = p }, icon = { Icon(icon, p.label) }, label = { Text(p.label, fontSize = 10.sp) },
+                        colors = NavigationBarItemDefaults.colors(selectedIconColor = Color.White, selectedTextColor = Color.White, indicatorColor = Red, unselectedIconColor = Muted, unselectedTextColor = Muted))
                 }
             }
-        ) {
-            Scaffold(
-                containerColor = Black,
-                topBar = {
-                    Row(
-                        Modifier.fillMaxWidth().background(Black).padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, contentDescription = "Open navigation menu", tint = Color.White)
-                        }
-                        Column(Modifier.weight(1f).padding(start = 4.dp)) {
-                            Text("BADASS", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Black, letterSpacing = 4.sp)
-                            Text("BIGO PK SLOTS", color = Color(0xFFFFA5A5), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                        }
-                        Surface(color = Color(0xFF241012), shape = RoundedCornerShape(20.dp)) {
-                            Text("HOST", color = Color(0xFFFF8585), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp))
-                        }
-                    }
-                }
-            ) { pad ->
-                Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    when (page) {
-                        AppPage.HOME -> HomeScreen { page = AppPage.BOOK }
-                        AppPage.BOOK -> BookingScreen()
-                        AppPage.MY_OPK -> MyOpkScreen()
-                        AppPage.ADMIN -> AdminScreen()
-                    }
-                    Text("BADASS BIGO PK • NATIVE ANDROID", color = Color(0xFF77777D), fontSize = 10.sp, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp))
-                }
+        }) { pad ->
+            Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                when (page) { AppPage.HOME -> HomeScreen { page = AppPage.BOOK }; AppPage.BOOK -> BookingScreen(); AppPage.MY_OPK -> MyOpkScreen(); AppPage.ADMIN -> AdminScreen() }
+                Text("BADASS BIGO PK • NATIVE ANDROID", color = Color(0xFF77777D), fontSize = 10.sp, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp))
             }
         }
     }
