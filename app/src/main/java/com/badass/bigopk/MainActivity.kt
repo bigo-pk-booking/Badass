@@ -61,6 +61,7 @@ private fun apiRequest(path: String, method: String = "GET", body: String? = nul
 }
 
 @Composable
+// Host sidebar trial navigation
 private fun BadassNativeApp() {
     var page by remember { mutableStateOf(AppPage.HOME) }
     var drawerOpen by remember { mutableStateOf(false) }
