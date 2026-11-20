@@ -2,7 +2,7 @@ name: Build BADass APK
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "host-sidebar-trial" ]
   workflow_dispatch:
 
 permissions:
